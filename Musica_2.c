@@ -30,53 +30,42 @@
 #define bt_joy 22
 #define move_X 26 // Pino para Eixo X
 #define Matrix_LED 7 // Pino de controle da matriz de LEDs
-static volatile uint32_t last_time = 0; //tempo da ultima interrupção 
 
-// Variáveis de controle da música
+
+// Variáveis Globais
+static volatile uint32_t last_time = 0; //Tempo da ultima interrupção 
 int volume = 50;  // Volume inicial (50%)
 int qual_musica = 1; // 1 - Marcha Imperial; 2 - Mario; 0 - PAUSE
 bool pause_play = true;  // Indica se está pausado
-
-uint *frequencia = NULL;
-uint *duracao = NULL;
-
-struct repeating_timer timer_musica;
-struct repeating_timer timer_volume;
-struct repeating_timer timer_matrix;
-struct repeating_timer pausa_entre_musicas;
-
+uint *frequencia = NULL; //Ponteiro para as frequencias da musica
+uint *duracao = NULL; //Ponteiro para as durações musica
+struct repeating_timer timer_musica; // timer de repetição para controlar a  musica
+struct repeating_timer timer_volume; // timer de repetição para controlar o volume
+struct repeating_timer timer_matrix; // timer de repetição para para controlar a matriz led 5x5
 const uint LED_G = 11; //LED verde
 const uint LED_B = 12; //LED azul
 const uint LED_R = 13; //LED vermelho
-
-int tamanho = 0;
-int i = 0;
-
-const int ADC_C0 = 0; //canal ADC para eixo X
-
+int tamanho = 0; //Tamanho do vetor de frequencias 
+int i = 0; //Índice da musica atual
+const int ADC_C0 = 0; //canal ADC para eixo X do joystick
 uint16_t vrx_value; //variavel para captar valor de x e y
 uint16_t div_value_x; //variavel onde será salvo o valor x divivido 
-
-char buffer[25];
-
+char buffer[25];// buffer para exibir texto no OLED
 bool cor_borda = true; //borda on / off
-ssd1306_t ssd;
-volatile uint16_t adc_value = 0;
-
-static volatile uint intensidade = 25;
-static volatile uint intensidade_V = 0;// Armazena a intensidade da matriz de LEDs
-uint sm;
+ssd1306_t ssd; //Estrutura para controlar o diplay OLED
+volatile uint16_t adc_value = 0; //valor lido do ADC
+static volatile uint intensidade = 25; // Armazena a intensidade da matriz de leds
+static volatile uint intensidade_V = 0;// //Armazena a intensidade da matriz de led verde
+uint sm; //maquina de estado do PIO
 PIO pio = pio0;  // Seleciona o primeiro bloco de PIO
 bool ok; // verificação de clock
-double Led_R = 0.0, Led_B = 0.0, Led_G = 0.0;
-uint32_t valor_led;
-uint notas = 0;
-
-uint max_music = 3;
-
-const uint16_t WRAP = 2000;
-const uint16_t WRAP_L = 100;
-const float DIVISER = 1;
+double Led_R = 0.0, Led_B = 0.0, Led_G = 0.0;//Cores do RGB
+uint32_t valor_led;//valor de cor para a matriz de led
+uint notas = 0;// contador para mudar o desenho na matriz de led
+uint max_music = 3;// maximo de musicas
+const uint16_t WRAP = 2000;//top do pwm da musica(buzzer)
+const uint16_t WRAP_L = 100;//top do pwm do led
+const float DIVISER = 1;//divisor do pwm do led
 bool pwm_enabled = true; //estado do pwd dos led
 
 // Função para definir a intensidade das cores do LED
@@ -116,8 +105,9 @@ void set_pwm(uint led, uint16_t value){
     }
 }
 
+// Configuração da PIO para controle da matriz de LEDs
 void init_pio(){
-    // Configuração da PIO para controle da matriz de LEDs
+    
   uint offset = pio_add_program(pio, &pio_matrix_program); // Carrega o programa PIO
   sm = pio_claim_unused_sm(pio, true);               // Adquire uma máquina de estado
   pio_matrix_program_init(pio, sm, offset, Matrix_LED);   // Inicializa a PIO
@@ -125,6 +115,7 @@ void init_pio(){
   //desliga a matriz LEDs 5x5
   desenho_pio(nums[5], valor_led, pio, sm, Led_R, Led_G, Led_B);
 }
+
 //configuração do ADC do joystick
 void setup_joystick()
 {
@@ -198,6 +189,7 @@ void inicia_buzzer_pwm(uint16_t freq, int volume) {
     pwm_set_enabled(slice_num, true);
 }
 
+//callback para alteração do volume do buzzer
 bool volume_callback(struct repeating_timer *t) {
     adc_select_input(ADC_C0);
     uint16_t adc_raw = adc_read(); // Lê valor bruto do ADC (0-4095)
@@ -221,7 +213,9 @@ bool volume_callback(struct repeating_timer *t) {
     return true; // Mantém o timer rodando
 }
 
+
 void toca_musica();
+
 // Callback para tocar a próxima nota
 bool repeating_timer_callback(struct repeating_timer *t) {
     if (!pause_play && qual_musica > 0 && qual_musica <= max_music) return true;//Se pausado, apenas espera
@@ -296,6 +290,7 @@ void toca_musica() {
     }
 }
 
+//interrupção dos botões A, B e joystick
 void button_press(uint gpio, uint32_t events) {
     uint32_t current_time = to_us_since_boot(get_absolute_time());
 
@@ -358,6 +353,7 @@ void music_oled(){
     ssd1306_send_data(&ssd);
 }
 
+//função que inicializa e configura tudo;
 void setup() {
     stdio_init_all();
     setup_joystick();
@@ -374,21 +370,22 @@ void setup() {
 }
 
 int main() {
-    setup();
+    setup();//tudo inicializado e configurado
 
     gpio_set_irq_enabled_with_callback(btA, GPIO_IRQ_EDGE_FALL, true, &button_press); //configura e habilita a interrupção
     gpio_set_irq_enabled(btB, GPIO_IRQ_EDGE_FALL, true);  // Apenas habilita interrupção 
     gpio_set_irq_enabled(bt_joy, GPIO_IRQ_EDGE_FALL, true);  // Apenas habilita interrupção 
 
-    // Configura um timer para chamar adc_callback a cada 100ms
+    // Configura um timer para chamar volume_callback e matrix_LED_callback a cada 10ms
     add_repeating_timer_ms(10, volume_callback, NULL, &timer_volume);
     add_repeating_timer_ms(10, matrix_LED_callback, NULL, &timer_matrix);
 
-   // printf("Tocando música com volume: %d%%\n", volume);
+   //chama a função para iniciar a música
     toca_musica();
 
+    //loop principal
     while (1) {
-        music_oled();
+        music_oled();//atualiza o display OLED a cada 10ms
         sleep_ms(10);
     }
 
